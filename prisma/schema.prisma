@@ -1,0 +1,243 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DB_PRISMA_URL")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  expiresAt DateTime
+  user      User     @relation(references: [id], fields: [userId], onDelete: Cascade)
+}
+
+model EmailVerificationCode {
+  id        String   @id @default(cuid())
+  code      String
+  userId    String
+  email     String
+  expiresAt DateTime
+  user      User     @relation(references: [id], fields: [userId], onDelete: Cascade)
+}
+
+model User {
+  id                     String                  @id @unique @default(cuid())
+  name                   String?
+  email                  String?                 @unique
+  emailVerified          Boolean?                @default(false)
+  picture                String?
+  githubId               Int?                    @unique
+  googleId String? @unique
+  role                   Role                    @default(USER)
+  sessions               Session[]
+  emailVerificationCodes EmailVerificationCode[]
+  dailyGameProgress      DailyGameProgress[]
+  supportMessages        SupportMessage[]
+
+  // Multiplayer game relations
+  hostedLobbies          Lobby[]                 @relation("LobbyHost")
+  lobbyParticipations    LobbyPlayer[]           @relation("LobbyParticipant")
+
+  stripeCustomerId       String?   @unique @map(name: "stripe_customer_id")
+  stripeSubscriptionId   String?   @unique @map(name: "stripe_subscription_id")
+  stripePriceId          String?   @map(name: "stripe_price_id")
+  stripeCurrentPeriodEnd DateTime? @map(name: "stripe_current_period_end")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+model DailyImage {
+  id          String   @id @default(cuid())
+  cloudinaryUrl String
+  year        Int
+  description String?
+  tip         Json?
+  date        DateTime @unique @db.Date
+  gameProgress DailyGameProgress[]
+  multiplayerRounds MultiplayerGameRound[] @relation("MultiplayerRoundImages")
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model DailyGameProgress {
+  id          String     @id @default(cuid())
+  userId      String?
+  user        User?      @relation(references: [id], fields: [userId], onDelete: Cascade)
+  sessionId   String?    // For tracking anonymous users
+  imageId     String
+  image       DailyImage @relation(references: [id], fields: [imageId], onDelete: Cascade)
+  attempts    Int        @default(0)
+  completed   Boolean    @default(false)
+  won         Boolean    @default(false)
+  winAttempt  Int?       // Which attempt they won on (1-5)
+  date        DateTime   @db.Date
+
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@unique([userId, imageId])
+  @@unique([userId, date])
+  @@unique([sessionId, date])
+}
+
+model SupportMessage {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(references: [id], fields: [userId], onDelete: SetNull)
+  name      String
+  email     String
+  subject   String
+  message   String   @db.Text
+  status    String   @default("open") // open, in_progress, resolved
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Lobby {
+  id            String           @id @default(cuid())
+  name          String
+  description   String?          // Room description
+  isOpen        Boolean          @default(true) // true = open, false = private (link only)
+  maxPlayers    Int              @default(4)
+  rounds        Int              @default(3)
+  roundTimer    Int              @default(60) // Timer in seconds for each round
+  betweenRoundsTimer Int         @default(5) // Timer in seconds between rounds
+  gameMode      GameMode         @default(CLASSIC)
+  status        LobbyStatus      @default(WAITING)
+  currentRound  Int              @default(0)
+  hostUserId    String
+  host          User             @relation("LobbyHost", references: [id], fields: [hostUserId], onDelete: Cascade)
+  hintsEnabled  Boolean          @default(false) // Optional hints
+  targetScore   Int?             // For marathon mode
+  inviteCode    String?          @unique // Private room invite code
+
+  players       LobbyPlayer[]
+  gameRounds    MultiplayerGameRound[]
+  chatMessages  LobbyMessage[]
+
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+}
+
+model LobbyPlayer {
+  id        String   @id @default(cuid())
+  lobbyId   String
+  lobby     Lobby    @relation(references: [id], fields: [lobbyId], onDelete: Cascade)
+  userId    String?
+  user      User?    @relation("LobbyParticipant", references: [id], fields: [userId], onDelete: Cascade)
+  sessionId String? // For anonymous players
+  username  String   // Display name for the game
+  avatar    String?  // Avatar/emoji for the player
+  score     Int      @default(0)
+  isReady   Boolean  @default(false)
+  isEliminated Boolean @default(false) // For elimination mode
+  streak    Int      @default(0) // Current streak for combo multiplier
+
+  guesses   MultiplayerGuess[]
+  reactions LobbyReaction[]
+  messages  LobbyMessage[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([lobbyId, userId])
+  @@unique([lobbyId, sessionId])
+}
+
+model MultiplayerGameRound {
+  id          String             @id @default(cuid())
+  lobbyId     String
+  lobby       Lobby              @relation(references: [id], fields: [lobbyId], onDelete: Cascade)
+  roundNumber Int
+  imageId     String
+  image       DailyImage         @relation("MultiplayerRoundImages", references: [id], fields: [imageId], onDelete: Cascade)
+  status      RoundStatus        @default(ACTIVE)
+  startedAt   DateTime?
+  endedAt     DateTime?
+  timerEndsAt DateTime?          // When the timer expires for this round
+
+  guesses     MultiplayerGuess[]
+
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  @@unique([lobbyId, roundNumber])
+}
+
+model MultiplayerGuess {
+  id        String               @id @default(cuid())
+  roundId   String
+  round     MultiplayerGameRound @relation(references: [id], fields: [roundId], onDelete: Cascade)
+  playerId  String
+  player    LobbyPlayer          @relation(references: [id], fields: [playerId], onDelete: Cascade)
+  year      Int
+  points    Int                  @default(0) // Points based on proximity to correct answer
+  speedBonus Int                 @default(0) // Bonus points for quick response
+  accuracy  Int                  @default(0) // Years off from correct answer
+
+  createdAt DateTime             @default(now())
+
+  @@unique([roundId, playerId])
+}
+
+model LobbyMessage {
+  id        String      @id @default(cuid())
+  lobbyId   String
+  lobby     Lobby       @relation(references: [id], fields: [lobbyId], onDelete: Cascade)
+  playerId  String?
+  player    LobbyPlayer? @relation(references: [id], fields: [playerId], onDelete: Cascade)
+  username  String      // Display name (for anonymous users too)
+  message   String
+  type      MessageType @default(CHAT) // CHAT, SYSTEM, QUICK_PHRASE
+
+  createdAt DateTime    @default(now())
+}
+
+model LobbyReaction {
+  id        String      @id @default(cuid())
+  lobbyId   String
+  playerId  String
+  player    LobbyPlayer @relation(references: [id], fields: [playerId], onDelete: Cascade)
+  roundId   String?     // Optional: reaction to specific round
+  emoji     String      // The emoji reaction
+  targetType String     // "round_result", "guess", "general"
+  targetId  String?     // ID of the target (round, guess, etc.)
+
+  createdAt DateTime    @default(now())
+
+  @@unique([playerId, roundId, emoji]) // Prevent duplicate reactions
+}
+
+enum MessageType {
+  CHAT          // Regular chat message
+  SYSTEM        // System message (player joined, etc.)
+  QUICK_PHRASE  // Pre-defined quick phrase
+}
+
+enum GameMode {
+  CLASSIC     // Standard game, all players play all rounds
+  ELIMINATION // Last place eliminated each round
+  MARATHON    // Continuous until target score reached
+}
+
+enum LobbyStatus {
+  WAITING    // Waiting for players
+  PLAYING    // Game in progress
+  FINISHED   // Game completed
+}
+
+enum RoundStatus {
+  ACTIVE     // Round in progress, accepting guesses
+  COMPLETED  // Round finished, showing results
+}

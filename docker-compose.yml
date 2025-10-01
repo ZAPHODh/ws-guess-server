@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: loqano-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${DB_USER:-loqano}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=${DB_NAME:-loqano_db}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - loqano-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-loqano} -d ${DB_NAME:-loqano_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "5432:5432"  # Opcional: expor para acesso externo
+
+  ws-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: loqano-ws-server
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${WS_PORT:-3001}:3001"
+    environment:
+      - NODE_ENV=production
+      - WS_PORT=3001
+      - DB_PRISMA_URL=postgresql://${DB_USER:-loqano}:${DB_PASSWORD}@postgres:5432/${DB_NAME:-loqano_db}?schema=public
+      - FRONTEND_URL=${FRONTEND_URL}
+    networks:
+      - loqano-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3001/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  postgres-data:
+    driver: local
+
+networks:
+  loqano-network:
+    driver: bridge

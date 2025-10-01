@@ -1,0 +1,213 @@
+import { Socket } from 'socket.io';
+import { ServerToClientEvents, ClientToServerEvents, SocketData } from '../types/socket';
+import { prisma, getLobbyState, createSystemMessage, checkLobbyState } from '../utils/database';
+import { startGame } from './game-handlers';
+
+type SocketType = Socket<ClientToServerEvents, ServerToClientEvents, {}, SocketData>;
+
+export const handleJoinLobby = async (socket: SocketType, data: Parameters<ClientToServerEvents['join_lobby']>[0]) => {
+  try {
+    const { lobbyId, userId, sessionId, username } = data;
+
+    const lobby = await prisma.lobby.findUnique({
+      where: { id: lobbyId },
+      include: {
+        players: {
+          include: { user: true }
+        },
+        host: true
+      }
+    });
+
+    if (!lobby) {
+      socket.emit('error', { message: 'Lobby not found' });
+      return;
+    }
+
+    if (lobby.status === 'PLAYING') {
+      socket.emit('error', { message: 'Game already in progress' });
+      return;
+    }
+
+    if (lobby.status === 'FINISHED') {
+      socket.emit('error', { message: 'Lobby has ended' });
+      return;
+    }
+
+    if (lobby.players.length >= lobby.maxPlayers) {
+      socket.emit('error', { message: 'Lobby is full' });
+      return;
+    }
+
+    // Check if player already exists
+    const existingPlayer = lobby.players.find(p =>
+      (userId && p.userId === userId) || (sessionId && p.sessionId === sessionId)
+    );
+
+    let player;
+    if (existingPlayer) {
+      player = existingPlayer;
+    } else {
+      player = await prisma.lobbyPlayer.create({
+        data: {
+          lobbyId,
+          userId,
+          sessionId,
+          username,
+          avatar: data.avatar || '🎮'
+        },
+        include: { user: true }
+      });
+    }
+
+    socket.join(`lobby_${lobbyId}`);
+    socket.data.lobbyId = lobbyId;
+    socket.data.playerId = player.id;
+    socket.data.userId = userId;
+
+    // Send lobby state to new player
+    const updatedLobby = await getLobbyState(lobbyId);
+    socket.emit('lobby_joined', updatedLobby!);
+
+    // Notify other players
+    socket.to(`lobby_${lobbyId}`).emit('player_joined', {
+      player: {
+        id: player.id,
+        userId: player.userId,
+        sessionId: player.sessionId,
+        username: player.username,
+        avatar: player.avatar,
+        score: player.score,
+        isReady: player.isReady,
+        isEliminated: player.isEliminated,
+        streak: player.streak
+      } as any
+    });
+
+    // Send system message
+    await createSystemMessage(lobbyId, `${username} joined the game`);
+
+  } catch (error) {
+    console.error('Error joining lobby:', error);
+    socket.emit('error', { message: 'Failed to join lobby' });
+  }
+};
+
+export const handleLeaveLobby = async (socket: SocketType, io?: any) => {
+  try {
+    if (socket.data.lobbyId && socket.data.playerId) {
+      const player = await prisma.lobbyPlayer.findUnique({
+        where: { id: socket.data.playerId }
+      });
+
+      if (player) {
+        await prisma.lobbyPlayer.delete({
+          where: { id: socket.data.playerId }
+        });
+
+        socket.to(`lobby_${socket.data.lobbyId}`).emit('player_left', {
+          playerId: socket.data.playerId,
+          username: player.username
+        });
+
+        await createSystemMessage(socket.data.lobbyId, `${player.username} left the game`);
+
+        // Check if lobby should be ended due to insufficient players
+        await checkLobbyState(socket.data.lobbyId, io);
+      }
+
+      socket.leave(`lobby_${socket.data.lobbyId}`);
+      socket.data.lobbyId = undefined;
+      socket.data.playerId = undefined;
+    }
+  } catch (error) {
+    console.error('Error leaving lobby:', error);
+  }
+};
+
+export const handlePlayerReady = async (socket: SocketType, data: Parameters<ClientToServerEvents['player_ready']>[0], io: any) => {
+  try {
+    const { isReady } = data;
+
+    if (!socket.data.playerId || !socket.data.lobbyId) return;
+
+    await prisma.lobbyPlayer.update({
+      where: { id: socket.data.playerId },
+      data: { isReady }
+    });
+
+    io.to(`lobby_${socket.data.lobbyId}`).emit('player_ready_changed', {
+      playerId: socket.data.playerId,
+      isReady
+    });
+
+    // Check if all players are ready
+    const lobby = await prisma.lobby.findUnique({
+      where: { id: socket.data.lobbyId },
+      include: { players: true }
+    });
+
+    if (!lobby) return;
+
+    console.log('Checking auto start conditions:', {
+      totalPlayers: lobby.players.length,
+      activePlayers: lobby.players.filter(p => !p.isEliminated).length,
+      playersReady: lobby.players.map(p => ({ username: p.username, isReady: p.isReady, isEliminated: p.isEliminated })),
+      lobbyStatus: lobby.status
+    });
+
+    // Only count non-eliminated players for ready check
+    const activePlayers = lobby.players.filter(p => !p.isEliminated);
+    const allReady = activePlayers.length >= 2 && activePlayers.every(p => p.isReady);
+    console.log('All players ready:', allReady);
+
+    if (allReady && lobby.status === 'WAITING') {
+      console.log('Starting game countdown for lobby:', socket.data.lobbyId);
+      // Start game countdown
+      socket.to(`lobby_${socket.data.lobbyId}`).emit('game_starting', { countdown: 5 });
+      socket.emit('game_starting', { countdown: 5 });
+      // Start the game after countdown
+      setTimeout(() => {
+        console.log('Starting game for lobby:', socket.data.lobbyId);
+        if (socket.data.lobbyId) {
+          startGame(socket.data.lobbyId, io);
+        }
+      }, 5000);
+    }
+
+  } catch (error) {
+    console.error('Error updating ready status:', error);
+  }
+};
+
+export const handleDisconnect = async (socket: SocketType, io?: any) => {
+  console.log('User disconnected:', socket.id);
+
+  try {
+    if (socket.data.lobbyId && socket.data.playerId) {
+      const player = await prisma.lobbyPlayer.findUnique({
+        where: { id: socket.data.playerId }
+      });
+
+      if (player) {
+        // Remove player from lobby
+        await prisma.lobbyPlayer.delete({
+          where: { id: socket.data.playerId }
+        });
+
+        // Broadcast to remaining players
+        socket.to(`lobby_${socket.data.lobbyId}`).emit('player_left', {
+          playerId: socket.data.playerId,
+          username: player.username
+        });
+
+        await createSystemMessage(socket.data.lobbyId, `${player.username} disconnected`);
+
+        // Check if lobby should be ended due to insufficient players
+        await checkLobbyState(socket.data.lobbyId, io);
+      }
+    }
+  } catch (error) {
+    console.error('Error handling disconnect:', error);
+  }
+};
