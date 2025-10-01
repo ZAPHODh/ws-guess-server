@@ -12,11 +12,11 @@ COPY package.json pnpm-lock.yaml ./
 # Install dependencies
 RUN pnpm install --frozen-lockfile
 
-# Copy prisma schema
+# Copy prisma schema AND migrations FIRST
 COPY prisma ./prisma/
 
-# Generate Prisma Client
-RUN pnpm prisma:generate
+# Generate Prisma Client AFTER copying schema
+RUN pnpm prisma generate
 
 # Copy source code
 COPY . .
@@ -39,8 +39,10 @@ COPY package.json pnpm-lock.yaml ./
 # Install production dependencies + prisma
 RUN pnpm install --prod --frozen-lockfile && pnpm add -D prisma
 
-# Copy prisma schema and generate client
+# Copy prisma schema AND migrations directory
 COPY prisma ./prisma/
+
+# Generate Prisma Client in production stage too
 RUN pnpm prisma generate
 
 # Copy built application from builder stage
