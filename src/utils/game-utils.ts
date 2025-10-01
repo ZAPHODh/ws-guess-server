@@ -2,12 +2,10 @@ export const calculatePoints = (guess: number, correctYear: number, roundStartTi
   const yearDiff = Math.abs(guess - correctYear);
   let basePoints = Math.max(0, 100 - yearDiff);
 
-  // Speed bonus (0-20 points based on response time)
   const responseTime = Date.now() - roundStartTime;
-  const maxResponseTime = 60000; // 60 seconds
+  const maxResponseTime = 60000;
   const speedBonus = Math.max(0, 20 - Math.floor((responseTime / maxResponseTime) * 20));
 
-  // Hint penalty
   const hintPenalty = hintsGiven * 5;
 
   return {

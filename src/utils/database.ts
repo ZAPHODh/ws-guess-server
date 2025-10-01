@@ -78,9 +78,7 @@ export const checkLobbyState = async (lobbyId: string, io?: any): Promise<void> 
       return;
     }
 
-    // If only 1 player left and game is in progress, end the game
     if (lobby.players.length === 1 && lobby.status === 'PLAYING') {
-      // Will need to import endGame function here or pass it as parameter
       console.log(`Need to end game for lobby ${lobbyId} - only 1 player remaining`);
       return;
     }
@@ -95,7 +93,6 @@ export const checkLobbyState = async (lobbyId: string, io?: any): Promise<void> 
         data: { hostUserId: newHost.userId || 'anonymous' }
       });
 
-      // Update new host's avatar to crown
       await prisma.lobbyPlayer.update({
         where: { id: newHost.id },
         data: { avatar: '👑' }

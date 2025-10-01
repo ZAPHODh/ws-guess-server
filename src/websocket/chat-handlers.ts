@@ -26,7 +26,6 @@ export const handleSendMessage = async (socket: SocketType, data: Parameters<Cli
       }
     });
 
-    // Broadcast to all players in the lobby including sender
     socket.to(`lobby_${socket.data.lobbyId}`).emit('new_message', chatMessage as any);
     socket.emit('new_message', chatMessage as any);
 
@@ -52,7 +51,6 @@ export const handleSendReaction = async (socket: SocketType, data: Parameters<Cl
       }
     });
 
-    // Broadcast reaction to all players in the lobby including sender
     const reactionData = {
       playerId: socket.data.playerId,
       emoji,

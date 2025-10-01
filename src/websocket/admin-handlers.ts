@@ -53,7 +53,6 @@ export const handleUpdateLobbySettings = async (socket: SocketType, data: Parame
       return;
     }
 
-    // Update the lobby in database
     const updatedLobby = await prisma.lobby.update({
       where: { id: socket.data.lobbyId },
       data: {
@@ -69,7 +68,7 @@ export const handleUpdateLobbySettings = async (socket: SocketType, data: Parame
       }
     });
 
-    // Broadcast to all players in the lobby
+  
     socket.to(`lobby_${socket.data.lobbyId}`).emit('lobby_updated', {
       lobby: updatedLobby as any
     });
@@ -77,7 +76,7 @@ export const handleUpdateLobbySettings = async (socket: SocketType, data: Parame
       lobby: updatedLobby as any
     });
 
-    // Send system message
+
     await createSystemMessage(socket.data.lobbyId, 'Host updated game settings');
 
   } catch (error) {
@@ -107,7 +106,6 @@ export const handleRestartGame = async (socket: SocketType) => {
       return;
     }
 
-    // Reset lobby to waiting state
     await prisma.lobby.update({
       where: { id: socket.data.lobbyId },
       data: {
@@ -116,7 +114,6 @@ export const handleRestartGame = async (socket: SocketType) => {
       }
     });
 
-    // Reset all players
     await prisma.lobbyPlayer.updateMany({
       where: { lobbyId: socket.data.lobbyId },
       data: {
@@ -127,7 +124,6 @@ export const handleRestartGame = async (socket: SocketType) => {
       }
     });
 
-    // Delete previous game rounds and guesses
     const rounds = await prisma.multiplayerGameRound.findMany({
       where: { lobbyId: socket.data.lobbyId },
       select: { id: true }
@@ -136,18 +132,15 @@ export const handleRestartGame = async (socket: SocketType) => {
     if (rounds.length > 0) {
       const roundIds = rounds.map(r => r.id);
 
-      // Delete all guesses for these rounds
       await prisma.multiplayerGuess.deleteMany({
         where: { roundId: { in: roundIds } }
       });
 
-      // Delete all rounds
       await prisma.multiplayerGameRound.deleteMany({
         where: { lobbyId: socket.data.lobbyId }
       });
     }
 
-    // Get updated lobby with reset players
     const updatedLobby = await prisma.lobby.findUnique({
       where: { id: socket.data.lobbyId },
       include: {
@@ -161,7 +154,6 @@ export const handleRestartGame = async (socket: SocketType) => {
 
     if (!updatedLobby) return;
 
-    // Broadcast lobby reset to all players
     const resetData = {
       lobby: updatedLobby,
       players: updatedLobby.players,
@@ -171,7 +163,6 @@ export const handleRestartGame = async (socket: SocketType) => {
     socket.to(`lobby_${socket.data.lobbyId}`).emit('game_restarted', resetData as any);
     socket.emit('game_restarted', resetData as any);
 
-    // Send system message
     await createSystemMessage(socket.data.lobbyId, 'Host restarted the game');
 
   } catch (error) {
@@ -186,7 +177,6 @@ export const handleKickPlayer = async (socket: SocketType, data: Parameters<Clie
 
     if (!socket.data.lobbyId || !socket.data.userId) return;
 
-    // Verify the requesting player is the host
     const lobby = await prisma.lobby.findUnique({
       where: { id: socket.data.lobbyId },
       include: { players: true }
@@ -197,7 +187,6 @@ export const handleKickPlayer = async (socket: SocketType, data: Parameters<Clie
       return;
     }
 
-    // Find the player to kick first
     const playerToKick = await prisma.lobbyPlayer.findUnique({
       where: { id: playerId },
       include: { user: true }
@@ -213,15 +202,12 @@ export const handleKickPlayer = async (socket: SocketType, data: Parameters<Clie
       return;
     }
 
-    // Remove the player from the lobby
     await prisma.lobbyPlayer.delete({
       where: { id: playerId }
     });
 
-    // Create system message
     await createSystemMessage(socket.data.lobbyId, `${playerToKick.username} was kicked from the lobby`);
 
-    // Find the socket of the kicked player and disconnect them
     const sockets = await io.in(`lobby_${socket.data.lobbyId}`).fetchSockets();
     for (const playerSocket of sockets) {
       if (playerSocket.data.playerId === playerId) {
@@ -231,7 +217,6 @@ export const handleKickPlayer = async (socket: SocketType, data: Parameters<Clie
       }
     }
 
-    // Notify all players in the lobby
     socket.to(`lobby_${socket.data.lobbyId}`).emit('player_left', {
       playerId: playerId,
       username: playerToKick.username
@@ -249,7 +234,6 @@ export const handleTransferHost = async (socket: SocketType, data: Parameters<Cl
 
     if (!socket.data.lobbyId || !socket.data.userId) return;
 
-    // Verify the requesting player is the current host
     const lobby = await prisma.lobby.findUnique({
       where: { id: socket.data.lobbyId },
       include: { players: true }
@@ -260,7 +244,6 @@ export const handleTransferHost = async (socket: SocketType, data: Parameters<Cl
       return;
     }
 
-    // Find the target player
     const targetPlayer = await prisma.lobbyPlayer.findUnique({
       where: { id: playerId }
     });
@@ -270,13 +253,11 @@ export const handleTransferHost = async (socket: SocketType, data: Parameters<Cl
       return;
     }
 
-    // Update the lobby host
     await prisma.lobby.update({
       where: { id: socket.data.lobbyId },
       data: { hostUserId: targetPlayer.userId }
     });
 
-    // Broadcast the host change to all players
     const transferData = {
       newHostUserId: targetPlayer.userId,
       newHostPlayerId: playerId
