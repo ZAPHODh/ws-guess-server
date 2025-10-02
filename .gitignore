@@ -6,3 +6,4 @@ dist/
 .env.development.local
 *.log
 DEPLOYMENT.md
+.claude

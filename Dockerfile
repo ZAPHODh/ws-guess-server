@@ -42,6 +42,8 @@ RUN pnpm install --prod --frozen-lockfile && pnpm add -D prisma
 # Copy prisma schema
 COPY prisma/schema.prisma ./prisma/
 
+COPY .env ./
+
 # Generate Prisma Client in production stage too
 RUN pnpm prisma generate
 

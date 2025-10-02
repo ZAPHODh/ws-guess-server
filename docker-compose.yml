@@ -13,7 +13,7 @@ services:
     networks:
       - loqano-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-loqano} -d ${DB_NAME:-loqano_db}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-loqano}"]
       interval: 10s
       timeout: 5s
       retries: 5
