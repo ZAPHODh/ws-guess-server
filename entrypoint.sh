@@ -9,8 +9,8 @@ done
 
 echo " Database is ready!"
 
-echo "Running Prisma migrations..."
-pnpm prisma migrate deploy
+echo "Running Prisma db push..."
+pnpm prisma db push --accept-data-loss
 
 echo "Starting WebSocket server..."
 exec "$@"

@@ -35,3 +35,6 @@ coverage
 *.log
 README.md
 .editorconfig
+
+# Prisma migrations (using db push instead)
+prisma/migrations
