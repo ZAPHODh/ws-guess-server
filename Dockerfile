@@ -1,29 +1,3 @@
-# Build stage
-FROM node:20-alpine AS builder
-
-# Install pnpm
-RUN npm install -g pnpm@10.7.1
-
-WORKDIR /app
-
-# Copy package files
-COPY package.json pnpm-lock.yaml ./
-
-# Install dependencies
-RUN pnpm install --frozen-lockfile
-
-# Copy prisma schema FIRST
-COPY prisma/schema.prisma ./prisma/
-
-# Generate Prisma Client AFTER copying schema
-RUN pnpm prisma generate
-
-# Copy source code
-COPY . .
-
-# Build TypeScript
-RUN pnpm build
-
 # Production stage
 FROM node:20-alpine
 
@@ -41,8 +15,6 @@ RUN pnpm install --prod --frozen-lockfile && pnpm add -D prisma
 
 # Copy prisma schema
 COPY prisma/schema.prisma ./prisma/
-
-COPY .env ./
 
 # Generate Prisma Client in production stage too
 RUN pnpm prisma generate
