@@ -2,6 +2,9 @@ import { Socket } from 'socket.io';
 import { ServerToClientEvents, ClientToServerEvents, SocketData } from '../types/socket';
 import { prisma, createSystemMessage } from '../utils/database';
 import { calculatePoints } from '../utils/game-utils';
+import { validateSocketData, submitGuessSchema } from '../schemas/validation';
+import { logger } from '../utils/logger';
+import { metrics } from '../utils/metrics';
 
 type SocketType = Socket<ClientToServerEvents, ServerToClientEvents, {}, SocketData>;
 
@@ -254,8 +257,18 @@ export const endGame = async (lobbyId: string, io: any) => {
 };
 
 export const handleSubmitGuess = async (socket: SocketType, data: Parameters<ClientToServerEvents['submit_guess']>[0]) => {
+  const start = Date.now();
+
   try {
-    const { year } = data;
+    // Validate data
+    const validation = validateSocketData(submitGuessSchema, data, 'submit_guess');
+    if (!validation.success) {
+      socket.emit('error', { message: validation.error });
+      metrics.increment('guess_validation_errors');
+      return;
+    }
+
+    const { year } = validation.data;
 
     if (!socket.data.lobbyId || !socket.data.playerId) return;
 
@@ -302,6 +315,18 @@ export const handleSubmitGuess = async (socket: SocketType, data: Parameters<Cli
 
     socket.emit('guess_submitted', { success: true });
 
+    const duration = Date.now() - start;
+    metrics.timing('guess_processing_time', duration);
+    metrics.increment('guesses_submitted');
+
+    logger.info('Guess submitted', {
+      socketId: socket.id,
+      lobbyId: socket.data.lobbyId,
+      playerId: socket.data.playerId,
+      year,
+      points: pointsData.points
+    });
+
     // Check if all players have guessed
     const allGuesses = await prisma.multiplayerGuess.findMany({
       where: { roundId: round.id },
@@ -321,6 +346,11 @@ export const handleSubmitGuess = async (socket: SocketType, data: Parameters<Cli
     }
 
   } catch (error) {
-    console.error('Error submitting guess:', error);
+    metrics.increment('guess_errors');
+    logger.error('Error submitting guess', {
+      socketId: socket.id,
+      lobbyId: socket.data.lobbyId,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
   }
 };

@@ -47,6 +47,13 @@ export function createSocketServer() {
   io.on('connection', (socket) => {
     console.log('User connected:', socket.id);
 
+    // Ping/Pong handler for latency measurement
+    (socket as any).on('ping', (data: any, callback: any) => {
+      if (typeof callback === 'function') {
+        callback();
+      }
+    });
+
     socket.on('join_lobby', (data) => handleJoinLobby(socket, data));
     socket.on('leave_lobby', () => handleLeaveLobby(socket, io));
     socket.on('player_ready', (data) => handlePlayerReady(socket, data, io));

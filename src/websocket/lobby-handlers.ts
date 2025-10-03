@@ -2,12 +2,23 @@ import { Socket } from 'socket.io';
 import { ServerToClientEvents, ClientToServerEvents, SocketData } from '../types/socket';
 import { prisma, getLobbyState, createSystemMessage, checkLobbyState } from '../utils/database';
 import { startGame } from './game-handlers';
+import { validateSocketData, joinLobbySchema } from '../schemas/validation';
+import { logger } from '../utils/logger';
+import { metrics } from '../utils/metrics';
 
 type SocketType = Socket<ClientToServerEvents, ServerToClientEvents, {}, SocketData>;
 
 export const handleJoinLobby = async (socket: SocketType, data: Parameters<ClientToServerEvents['join_lobby']>[0]) => {
   try {
-    const { lobbyId, userId, sessionId, username } = data;
+    // Validate data
+    const validation = validateSocketData(joinLobbySchema, data, 'join_lobby');
+    if (!validation.success) {
+      socket.emit('error', { message: validation.error });
+      metrics.increment('join_lobby_validation_errors');
+      return;
+    }
+
+    const { lobbyId, userId, sessionId, username } = validation.data;
 
     const lobby = await prisma.lobby.findUnique({
       where: { id: lobbyId },
@@ -62,7 +73,7 @@ export const handleJoinLobby = async (socket: SocketType, data: Parameters<Clien
     socket.join(`lobby_${lobbyId}`);
     socket.data.lobbyId = lobbyId;
     socket.data.playerId = player.id;
-    socket.data.userId = userId;
+    socket.data.userId = userId || undefined;
 
     const updatedLobby = await getLobbyState(lobbyId);
     socket.emit('lobby_joined', updatedLobby!);
@@ -83,8 +94,20 @@ export const handleJoinLobby = async (socket: SocketType, data: Parameters<Clien
 
     await createSystemMessage(lobbyId, `${username} joined the game`);
 
+    metrics.increment('players_joined');
+    logger.info('Player joined lobby', {
+      socketId: socket.id,
+      lobbyId,
+      playerId: player.id,
+      username
+    });
+
   } catch (error) {
-    console.error('Error joining lobby:', error);
+    metrics.increment('join_lobby_errors');
+    logger.error('Error joining lobby', {
+      socketId: socket.id,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
     socket.emit('error', { message: 'Failed to join lobby' });
   }
 };
