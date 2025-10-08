@@ -35,8 +35,8 @@ export const getLobbyState = async (lobbyId: string): Promise<Lobby | null> => {
   return lobby as Lobby | null;
 };
 
-export const createSystemMessage = async (lobbyId: string, message: string): Promise<ChatMessage> => {
-  return await prisma.lobbyMessage.create({
+export const createSystemMessage = async (lobbyId: string, message: string, io?: any): Promise<ChatMessage> => {
+  const chatMessage = await prisma.lobbyMessage.create({
     data: {
       lobbyId,
       username: 'System',
@@ -44,6 +44,13 @@ export const createSystemMessage = async (lobbyId: string, message: string): Pro
       type: 'SYSTEM'
     }
   }) as ChatMessage;
+
+  // Broadcast system message to all clients in the lobby
+  if (io) {
+    io.to(`lobby_${lobbyId}`).emit('new_message', chatMessage);
+  }
+
+  return chatMessage;
 };
 
 export const checkLobbyState = async (lobbyId: string, io?: any): Promise<void> => {
@@ -99,7 +106,7 @@ export const checkLobbyState = async (lobbyId: string, io?: any): Promise<void> 
       });
 
       console.log(`${newHost.username} is now the host of lobby ${lobbyId}`);
-      await createSystemMessage(lobbyId, `${newHost.username} is now the host`);
+      await createSystemMessage(lobbyId, `${newHost.username} is now the host`, io);
     }
   } catch (error) {
     console.error('Error checking lobby state:', error);

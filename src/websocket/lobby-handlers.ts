@@ -8,7 +8,7 @@ import { metrics } from '../utils/metrics';
 
 type SocketType = Socket<ClientToServerEvents, ServerToClientEvents, {}, SocketData>;
 
-export const handleJoinLobby = async (socket: SocketType, data: Parameters<ClientToServerEvents['join_lobby']>[0]) => {
+export const handleJoinLobby = async (socket: SocketType, data: Parameters<ClientToServerEvents['join_lobby']>[0], io: any) => {
   try {
     // Validate data
     const validation = validateSocketData(joinLobbySchema, data, 'join_lobby');
@@ -92,7 +92,7 @@ export const handleJoinLobby = async (socket: SocketType, data: Parameters<Clien
       } as any
     });
 
-    await createSystemMessage(lobbyId, `${username} joined the game`);
+    await createSystemMessage(lobbyId, `${username} joined the game`, io);
 
     metrics.increment('players_joined');
     logger.info('Player joined lobby', {
@@ -129,7 +129,7 @@ export const handleLeaveLobby = async (socket: SocketType, io?: any) => {
           username: player.username
         });
 
-        await createSystemMessage(socket.data.lobbyId, `${player.username} left the game`);
+        await createSystemMessage(socket.data.lobbyId, `${player.username} left the game`, io);
 
         await checkLobbyState(socket.data.lobbyId, io);
       }
@@ -213,7 +213,7 @@ export const handleDisconnect = async (socket: SocketType, io?: any) => {
           username: player.username
         });
 
-        await createSystemMessage(socket.data.lobbyId, `${player.username} disconnected`);
+        await createSystemMessage(socket.data.lobbyId, `${player.username} disconnected`, io);
         await checkLobbyState(socket.data.lobbyId, io);
       }
     }

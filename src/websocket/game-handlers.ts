@@ -21,7 +21,7 @@ export const startGame = async (lobbyId: string, io: any) => {
       }
     });
 
-    await createSystemMessage(lobbyId, 'Game started! Get ready for the first round.');
+    await createSystemMessage(lobbyId, 'Game started! Get ready for the first round.', io);
 
     io.to(`lobby_${lobbyId}`).emit('game_started');
 
@@ -249,7 +249,7 @@ export const endGame = async (lobbyId: string, io: any) => {
       }))
     });
 
-    await createSystemMessage(lobbyId, `Game finished! Winner: ${lobby.players[0]?.username || 'Unknown'}`);
+    await createSystemMessage(lobbyId, `Game finished! Winner: ${lobby.players[0]?.username || 'Unknown'}`, io);
 
   } catch (error) {
     console.error('Error ending game:', error);

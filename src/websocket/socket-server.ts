@@ -54,7 +54,7 @@ export function createSocketServer() {
       }
     });
 
-    socket.on('join_lobby', (data) => handleJoinLobby(socket, data));
+    socket.on('join_lobby', (data) => handleJoinLobby(socket, data, io));
     socket.on('leave_lobby', () => handleLeaveLobby(socket, io));
     socket.on('player_ready', (data) => handlePlayerReady(socket, data, io));
 
@@ -89,8 +89,8 @@ export function createSocketServer() {
       }
     });
 
-    socket.on('update_lobby_settings', (data) => handleUpdateLobbySettings(socket, data));
-    socket.on('restart_game', () => handleRestartGame(socket));
+    socket.on('update_lobby_settings', (data) => handleUpdateLobbySettings(socket, data, io));
+    socket.on('restart_game', () => handleRestartGame(socket, io));
     socket.on('kick_player', (data) => handleKickPlayer(socket, data, io));
     socket.on('transfer_host', (data) => handleTransferHost(socket, data));
 

@@ -32,7 +32,7 @@ export const handleStartGame = async (socket: SocketType, io: any) => {
   }
 };
 
-export const handleUpdateLobbySettings = async (socket: SocketType, data: Parameters<ClientToServerEvents['update_lobby_settings']>[0]) => {
+export const handleUpdateLobbySettings = async (socket: SocketType, data: Parameters<ClientToServerEvents['update_lobby_settings']>[0], io: any) => {
   try {
     if (!socket.data.lobbyId || !socket.data.userId) return;
 
@@ -77,7 +77,7 @@ export const handleUpdateLobbySettings = async (socket: SocketType, data: Parame
     });
 
 
-    await createSystemMessage(socket.data.lobbyId, 'Host updated game settings');
+    await createSystemMessage(socket.data.lobbyId, 'Host updated game settings', io);
 
   } catch (error) {
     console.error('Error updating lobby settings:', error);
@@ -85,7 +85,7 @@ export const handleUpdateLobbySettings = async (socket: SocketType, data: Parame
   }
 };
 
-export const handleRestartGame = async (socket: SocketType) => {
+export const handleRestartGame = async (socket: SocketType, io: any) => {
   try {
     if (!socket.data.lobbyId || !socket.data.userId) return;
 
@@ -163,7 +163,7 @@ export const handleRestartGame = async (socket: SocketType) => {
     socket.to(`lobby_${socket.data.lobbyId}`).emit('game_restarted', resetData as any);
     socket.emit('game_restarted', resetData as any);
 
-    await createSystemMessage(socket.data.lobbyId, 'Host restarted the game');
+    await createSystemMessage(socket.data.lobbyId, 'Host restarted the game', io);
 
   } catch (error) {
     console.error('Error restarting game:', error);
@@ -206,7 +206,7 @@ export const handleKickPlayer = async (socket: SocketType, data: Parameters<Clie
       where: { id: playerId }
     });
 
-    await createSystemMessage(socket.data.lobbyId, `${playerToKick.username} was kicked from the lobby`);
+    await createSystemMessage(socket.data.lobbyId, `${playerToKick.username} was kicked from the lobby`, io);
 
     const sockets = await io.in(`lobby_${socket.data.lobbyId}`).fetchSockets();
     for (const playerSocket of sockets) {
