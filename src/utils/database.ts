@@ -91,7 +91,15 @@ export const checkLobbyState = async (lobbyId: string, io?: any): Promise<void> 
     }
 
     // If host left and lobby is waiting, transfer host to first player
-    const hostStillInLobby = lobby.players.some(p => p.userId === lobby.hostUserId);
+    const hostStillInLobby = lobby.players.some(p =>
+      p.userId && lobby.hostUserId && String(p.userId) === String(lobby.hostUserId)
+    );
+    console.log('Checking host status:', {
+      hostUserId: lobby.hostUserId,
+      players: lobby.players.map(p => ({ id: p.id, userId: p.userId, username: p.username })),
+      hostStillInLobby,
+      status: lobby.status
+    });
     if (!hostStillInLobby && lobby.status === 'WAITING' && lobby.players.length > 0) {
       const newHost = lobby.players[0];
 
@@ -107,6 +115,12 @@ export const checkLobbyState = async (lobbyId: string, io?: any): Promise<void> 
 
       console.log(`${newHost.username} is now the host of lobby ${lobbyId}`);
       await createSystemMessage(lobbyId, `${newHost.username} is now the host`, io);
+
+      if (io) {
+        io.to(`lobby_${lobbyId}`).emit('host_transferred', {
+          newHostUserId: newHost.userId || 'anonymous'
+        });
+      }
     }
   } catch (error) {
     console.error('Error checking lobby state:', error);
